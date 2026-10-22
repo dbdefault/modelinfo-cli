@@ -2,8 +2,11 @@ import argparse
 import json
 import math
 import os
+import pickle
+import struct
 import sys
 from typing import Sequence
+from rich.markup import escape
 from modelinfo.architecture import identify_architecture_name
 from modelinfo.calculator import calculate_footprint
 from modelinfo.parsers.gguf import parse_gguf_header
@@ -340,7 +343,17 @@ def _json_report(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    try:
+        return _run(args)
+    except KeyboardInterrupt:
+        return 130
+    except (OSError, ValueError, EOFError, struct.error, pickle.UnpicklingError) as exc:
+        # Parsers and the Hub client raise actionable messages; show them without a traceback.
+        error_console.print(f"[red]Error:[/red] {escape(str(exc))}")
+        return 1
 
+
+def _run(args: argparse.Namespace) -> int:
     # Strip trailing slashes from paths/repos to prevent empty basenames and routing issues
     if args.file:
         args.file = [path.rstrip("/\\") for path in args.file if path]
