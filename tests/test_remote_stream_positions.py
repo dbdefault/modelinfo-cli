@@ -42,7 +42,7 @@ def test_chunked_reads_reuse_buffer_and_return_independent_bytes(monkeypatch):
     buffer = stream.buffer
     first = stream.read(5)
     assert first == b"abcde"
-    assert type(first) is bytes
+    assert isinstance(first, bytes)
     assert stream.buffer is buffer  # Growth must not replace the accumulated buffer.
     assert stream.read(5) == b"fghij"
     assert stream.buffer is buffer
