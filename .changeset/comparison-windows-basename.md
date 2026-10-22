@@ -2,4 +2,4 @@
 "modelinfo-cli": patch
 ---
 
-Comparison mode now uses `os.path.basename` for model labels so Windows backslash paths show the file name instead of the full path (#56).
+Comparison mode now labels models with just the file name for Windows paths like `C:\models\b.pt`, instead of the full path (#56).
