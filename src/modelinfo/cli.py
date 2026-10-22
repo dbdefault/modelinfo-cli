@@ -176,6 +176,38 @@ def _list_weight_files(dir_path: str, suffix: str) -> list[str]:
     return sorted(names)
 
 
+def _pick_single(dir_path: str, suffix: str, label: str, hint: str = "") -> str | None:
+    """Return the only file with suffix in dir_path, None if absent; raise if ambiguous."""
+    files = _list_weight_files(dir_path, suffix)
+    if not files:
+        return None
+    if len(files) > 1:
+        listed = ", ".join(files)
+        raise ValueError(
+            f"Multiple {label} files found in '{dir_path}'{hint}. Please provide one of: {listed}"
+        )
+    return os.path.join(dir_path, files[0])
+
+
+def _local_gguf_group(dir_path: str, gguf_files: list[str]) -> dict:
+    """Build a GGUF_group payload for a local folder holding several .gguf files."""
+    variants = []
+    for name in gguf_files:
+        full = os.path.join(dir_path, name)
+        variants.append({"filename": name, "size": float(os.path.getsize(full))})
+    # Parse the smallest file for shared architecture metadata (same as remote).
+    header_target = min(variants, key=lambda v: v["size"])
+    tensors = parse_gguf_header(os.path.join(dir_path, header_target["filename"]))
+    tensors["__metadata__"] = tensors.get("__metadata__", {})
+    tensors["__metadata__"]["gguf_variants"] = variants
+    tensors["__metadata__"]["repo_id"] = dir_path
+    return {
+        "format_name": "GGUF_group",
+        "tensors": tensors,
+        "disk_size": 0.0,
+    }
+
+
 def _resolve_local_directory(dir_path: str) -> str | dict:
     """
     Pick a concrete weights path from a local model folder.
@@ -194,48 +226,23 @@ def _resolve_local_directory(dir_path: str) -> str | dict:
     if os.path.isfile(index_path):
         return index_path
 
-    safetensors = _list_weight_files(dir_path, ".safetensors")
-    if len(safetensors) == 1:
-        return os.path.join(dir_path, safetensors[0])
-    if len(safetensors) > 1:
-        listed = ", ".join(safetensors)
-        raise ValueError(
-            f"Multiple .safetensors files found in '{dir_path}' and no "
-            f"{index_name}. Please provide one of: {listed}"
-        )
+    found = _pick_single(dir_path, ".safetensors", ".safetensors", f" and no {index_name}")
+    if found:
+        return found
 
     gguf_files = _list_weight_files(dir_path, ".gguf")
     if len(gguf_files) == 1:
         return os.path.join(dir_path, gguf_files[0])
-    if len(gguf_files) > 1:
-        variants = []
-        for name in gguf_files:
-            full = os.path.join(dir_path, name)
-            variants.append({"filename": name, "size": float(os.path.getsize(full))})
-        # Parse the smallest file for shared architecture metadata (same as remote).
-        header_target = min(variants, key=lambda v: v["size"])
-        tensors = parse_gguf_header(os.path.join(dir_path, header_target["filename"]))
-        tensors["__metadata__"] = tensors.get("__metadata__", {})
-        tensors["__metadata__"]["gguf_variants"] = variants
-        tensors["__metadata__"]["repo_id"] = dir_path
-        return {
-            "format_name": "GGUF_group",
-            "tensors": tensors,
-            "disk_size": 0.0,
-        }
+    if gguf_files:
+        return _local_gguf_group(dir_path, gguf_files)
 
     pytorch_bin = os.path.join(dir_path, "pytorch_model.bin")
     if os.path.isfile(pytorch_bin):
         return pytorch_bin
 
-    pt_files = _list_weight_files(dir_path, ".pt")
-    if len(pt_files) == 1:
-        return os.path.join(dir_path, pt_files[0])
-    if len(pt_files) > 1:
-        listed = ", ".join(pt_files)
-        raise ValueError(
-            f"Multiple .pt files found in '{dir_path}'. Please provide one of: {listed}"
-        )
+    found = _pick_single(dir_path, ".pt", ".pt")
+    if found:
+        return found
 
     raise ValueError(
         f"No supported weight files found in '{dir_path}'. "
